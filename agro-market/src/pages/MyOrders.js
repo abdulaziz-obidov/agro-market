@@ -5,9 +5,10 @@ import Footer from '../components/layout/Footer';
 import { formatCurrency } from '../utils/formatCurrency';
 import Badge from '../components/common/Badge';
 import Loader from '../components/shared/Loader';
+import Button from '../components/common/Button';
 
-// Mock xotira funksiyasi orqali olamiz
-import { getOrders } from '../services/productService';
+// Haqiqiy backenddagi userga xos o'z buyurtmalarini olish
+import { getMyOrders, updateOrderStatus } from '../services/productService';
 
 const STATUS_CONFIG = {
   pending: { label: "Kutilmoqda", color: "yellow", icon: Clock },
@@ -21,17 +22,32 @@ const MyOrders = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Mahalliy user ma'lumotlarini ajratib olish
-    const user = JSON.parse(localStorage.getItem('agro_user') || '{}');
-    
-    getOrders().then(allOrders => {
-      // Hozirgi logged-in mijoz ismiga teng bo'lganlarini vizual filterlash
-      const myOrders = allOrders.filter(o => o.customer === user.full_name || o.customer === 'Xaridor');
-      setOrders(myOrders);
+  const fetchOrders = () => {
+    setLoading(true);
+    getMyOrders().then(res => {
+      setOrders(res);
+      setLoading(false);
+    }).catch(err => {
+      console.error(err);
       setLoading(false);
     });
+  };
+
+  useEffect(() => {
+    fetchOrders();
   }, []);
+
+  const handleCancel = async (id) => {
+    const reason = window.prompt("Iltimos, bekor qilish sababini qisqacha yozing:");
+    if (reason) {
+      try {
+        await updateOrderStatus(id, 'cancelled', reason);
+        fetchOrders();
+      } catch (e) {
+        alert("Xatolik yuz berdi");
+      }
+    }
+  };
 
   if (loading) return <div className="min-h-screen bg-gray-50"><Navbar/><Loader fullScreen /></div>;
 
@@ -54,25 +70,52 @@ const MyOrders = () => {
             {orders.map(order => {
               const config = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
               const StatusIcon = config.icon;
+              const items = Array.isArray(order.items) ? order.items : [];
               return (
-                <div key={order.id} className="card flex flex-col md:flex-row items-center justify-between gap-6 hover:shadow-card transition-shadow">
-                  <div>
-                    <div className="flex items-center gap-3 mb-2">
-                       <span className="font-extrabold text-lg text-gray-900">Buyurtma #{order.id}</span>
-                       <Badge color={config.color} className="flex items-center gap-1 px-2.5 py-1">
-                          <StatusIcon className="w-3.5 h-3.5" /> {config.label}
-                       </Badge>
+                <div key={order.id} className="card hover:shadow-card transition-shadow">
+                  <div className="flex flex-col md:flex-row items-center justify-between gap-6 border-b pb-4 mb-4">
+                    <div>
+                      <div className="flex items-center gap-3 mb-2">
+                         <span className="font-extrabold text-lg text-gray-900">Buyurtma #{order.id.slice(0,8)}</span>
+                         <Badge color={config.color} className="flex items-center gap-1 px-2.5 py-1">
+                            <StatusIcon className="w-3.5 h-3.5" /> {config.label}
+                         </Badge>
+                      </div>
+                      <p className="text-sm text-gray-500">
+                        Sana: {new Date(order.date).toLocaleString('uz-UZ', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute:'2-digit' })}
+                      </p>
                     </div>
-                    <p className="text-sm text-gray-500">
-                      Sana: {new Date(order.date).toLocaleString('uz-UZ', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute:'2-digit' })}
-                    </p>
-                    <p className="text-sm font-medium text-gray-700 mt-1">Savatdagi mahsulotlar tur-xili: {order.items} xil tovar</p>
+                    <div className="text-left md:text-right">
+                      <p className="text-sm text-gray-500 mb-1">Jami hisoblangan to'lov:</p>
+                      <p className="text-2xl font-bold text-primary-700">{formatCurrency(order.total)}</p>
+                    </div>
                   </div>
                   
-                  <div className="text-left md:text-right bg-gray-50 p-4 rounded-xl md:bg-transparent md:p-0">
-                    <p className="text-sm text-gray-500 mb-1">Jami hisoblangan to'lov:</p>
-                    <p className="text-2xl font-bold text-primary-700">{formatCurrency(order.total)}</p>
+                  <div className="mb-4">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-2">Buyurtma qilingan mahsulotlar:</h4>
+                    <ul className="space-y-1">
+                       {items.map((it, idx) => (
+                         <li key={idx} className="text-sm text-gray-600 flex justify-between bg-gray-50 p-2 rounded">
+                           <span>{it.name} x {it.quantity} birlik</span>
+                           <span className="font-medium">{formatCurrency(it.price * it.quantity)}</span>
+                         </li>
+                       ))}
+                    </ul>
                   </div>
+
+                  {order.status === 'cancelled' && order.cancel_reason && (
+                    <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm mb-4">
+                       <strong>Bekor qilish sababi:</strong> {order.cancel_reason}
+                    </div>
+                  )}
+
+                  {order.status === 'pending' && (
+                    <div className="flex justify-end pt-2">
+                       <Button variant="secondary" className="text-red-600 hover:bg-red-50 border-red-200" onClick={() => handleCancel(order.id)}>
+                          Buyurtmani bekor qilish
+                       </Button>
+                    </div>
+                  )}
                 </div>
               );
             })}
